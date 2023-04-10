@@ -1,0 +1,62 @@
+version: "3.5"
+services:
+  app:
+    image: simple-chat:dev
+    build:
+      context: ../../
+      dockerfile: ./docker/django/Dockerfile
+    container_name: app
+    restart: always
+    command: >
+      bash -c "
+                ./docker/wait-for.sh db:5432 -- echo \"db run successfully\" &&
+                find . -name \*.pyc -delete &&
+                cd /simple-chat && python manage.py collectstatic --noinput &&
+                gunicorn backend.wsgi:application -b :8080 -w 2 --reload -t 15 --env DJANGO_SETTINGS_MODULE='backend.settings'"
+    env_file:
+      - ../environment/app.local.env
+    volumes:
+      - ../../backend/:/simple-chat/backend/
+      - ../../docs/source/:/simple-chat/docs/source/
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    networks:
+      - default
+
+
+  migrations:
+    image: simple-chat:dev
+    container_name: migrations
+    volumes:
+      - ../../backend/apps:/simple-chat/backend/apps
+      - ../../backend/settings:/simple-chat/backend/settings
+    command: >
+      bash -c "
+                ./docker/wait-for.sh db:5432 -- echo \"db run successfully\" &&
+                export PGPASSWORD=eUFkAPHVbXMr26kWp4Ws &&
+                python manage.py migrate && python manage.py create_superuser"
+    depends_on:
+      - db
+    env_file:
+      - ../environment/app.local.env
+    networks:
+      - default
+
+
+  db:
+    image: postgres:14
+    container_name: db
+    ports:
+      - "5432:5432"
+    env_file:
+      - ../environment/db.local.env
+    volumes:
+      - ../db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - default
+
+networks:
+  default:
+    driver: "bridge"
